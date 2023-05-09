@@ -1,0 +1,26 @@
+{
+    "manifest_version": 3,
+    "name": "Example Chat Plugin",
+    "version": "1.0",
+    "action": {
+        "default_icon": {
+            "16": "images/icon16.png",
+            "48": "images/icon48.png",
+            "128": "images/icon128.png"
+        }
+    },
+    "permissions": [
+        "activeTab"
+    ],
+    "content_scripts": [{
+        "matches": ["*://*.youtube.com/*"],
+        "js": ["socket.io.min.js", "utils.js", "contentScript.js"],
+        "css": ["chatStyles.css"],
+        "run_at": "document_idle"
+    }],
+    "icons": {
+        "16": "images/icon16.png",
+        "48": "images/icon48.png",
+        "128": "images/icon128.png"
+    }
+}
