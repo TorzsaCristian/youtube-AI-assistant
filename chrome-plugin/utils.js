@@ -84,21 +84,50 @@ handleUserMessageInput = (chatInput, conversationArea, socket) => {
     }
 }
 
-handleSocketResponse = (data, conversationArea) => {
-    // Hide the spinner when the response is received
-    hideSpinner(conversationArea);
+let isAppending = false;
+let currentReceivedMessage;
 
+handleSocketResponse = (data, conversationArea) => {
     // Process the received response
     const response = data.response;
 
-    // Add the server's response to the conversation area
-    const receivedMessage = document.createElement('div');
-    receivedMessage.className = 'message received-message';
-    receivedMessage.innerText = response;
-    conversationArea.appendChild(receivedMessage);
+    if (response.length > 0) {
+        hideSpinner(conversationArea);
+    }
 
-    // Scroll to the bottom of the conversation area
-    conversationArea.scrollTop = conversationArea.scrollHeight;
+    // If the response is the "END" event, stop appending words to the current message
+    if (response === "END") {
+        isAppending = false;
+        return;
+    }
+
+    // If we're appending words to an existing message, update the existing message
+    if (isAppending) {
+        currentReceivedMessage.innerText += ' ' + response;
+    } else {
+        // If we're not appending, create a new message bubble and set isAppending to true
+        isAppending = true;
+        currentReceivedMessage = document.createElement('div');
+        currentReceivedMessage.className = 'message received-message';
+        currentReceivedMessage.innerText = response;
+        conversationArea.appendChild(currentReceivedMessage);
+    }
+
+
+    // // Hide the spinner when the response is received
+    // hideSpinner(conversationArea);
+
+    // // Process the received response
+    // const response = data.response;
+
+    // // Add the server's response to the conversation area
+    // const receivedMessage = document.createElement('div');
+    // receivedMessage.className = 'message received-message';
+    // receivedMessage.innerText = response;
+    // conversationArea.appendChild(receivedMessage);
+
+    // // Scroll to the bottom of the conversation area
+    // conversationArea.scrollTop = conversationArea.scrollHeight;
 }
 
 initialiseUI = (recommendationsTab) => {

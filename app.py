@@ -1,5 +1,5 @@
 from flask import Flask, request
-from flask_socketio import SocketIO, send, emit
+from flask_socketio import SocketIO, emit
 from flask_cors import CORS
 
 from langchain.document_loaders import YoutubeLoader
@@ -14,7 +14,9 @@ from langchain.prompts.chat import (
     SystemMessagePromptTemplate,
     HumanMessagePromptTemplate,
 )
-import textwrap
+from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
+from langchain.callbacks.base import BaseCallbackHandler
+from langchain.schema import LLMResult
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = "asdasdasdasdsadasd"
@@ -35,11 +37,18 @@ def create_db_from_video_url(video_url):
     return db
 
 
-def get_response_from_query(db, query, k=4):
+def get_response_from_query(
+    db, query, k=4, stream_handler=StreamingStdOutCallbackHandler()
+):
     docs = db.similarity_search(query, k=k)
     docs_page_content = " ".join([d.page_content for d in docs])
 
-    chat = ChatOpenAI(model_name="gpt-3.5-turbo", temperature=0.3)
+    chat = ChatOpenAI(
+        model_name="gpt-3.5-turbo",
+        temperature=0.3,
+        streaming=True,
+        callbacks=[stream_handler],
+    )
 
     # Template to use for the system message prompt
     template = """
@@ -62,7 +71,11 @@ def get_response_from_query(db, query, k=4):
         [system_message_prompt, human_message_prompt]
     )
 
-    chain = LLMChain(llm=chat, prompt=chat_prompt)
+    chain = LLMChain(
+        llm=chat,
+        prompt=chat_prompt,
+        # callbacks=[stream_handler],
+    )
 
     response = chain.run(question=query, docs=docs_page_content)
     return response, docs
@@ -70,6 +83,18 @@ def get_response_from_query(db, query, k=4):
 
 # A dictionary to store cached results per session
 cached_results = {}
+
+
+class MyCustomHandler(BaseCallbackHandler):
+    def on_llm_new_token(self, token: str, **kwargs) -> None:
+        print(f"My custom handler, token: {token}")
+        emit("message_response", {"response": token})
+
+    def on_llm_end(self, response: LLMResult, **kwargs) -> None:
+        """Run when LLM ends running."""
+        print(f"Chat question end")
+        print(response)
+        emit("message_response", {"response": "END"})
 
 
 @socketio.on("send_message")
@@ -88,11 +113,11 @@ def handle_send_message(data):
         print("HIT FROM CACHE")
         db = cached_results[session_id]
 
-    response, docs = get_response_from_query(db, query)
-
-    # Send response
-    emit("message_response", {"response": response})
+    stream_handler = MyCustomHandler()
+    get_response_from_query(db, query, stream_handler=stream_handler)
 
 
 if __name__ == "__main__":
-    socketio.run(app, host="localhost", port=9000, allow_unsafe_werkzeug=True)
+    socketio.run(
+        app, host="localhost", port=9000, allow_unsafe_werkzeug=True, debug=True
+    )
