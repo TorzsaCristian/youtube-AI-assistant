@@ -30,7 +30,7 @@ def create_db_from_video_url(video_url):
     loader = YoutubeLoader.from_youtube_url(video_url)
     transcript = loader.load()
 
-    text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
+    text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=50)
     docs = text_splitter.split_documents(transcript)
 
     db = FAISS.from_documents(docs, embeddings)
@@ -87,7 +87,7 @@ cached_results = {}
 
 class MyCustomHandler(BaseCallbackHandler):
     def on_llm_new_token(self, token: str, **kwargs) -> None:
-        print(f"My custom handler, token: {token}")
+        # print(f"My custom handler, token: {token}")
         emit("message_response", {"response": token})
 
     def on_llm_end(self, response: LLMResult, **kwargs) -> None:
