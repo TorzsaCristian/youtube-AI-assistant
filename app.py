@@ -25,6 +25,9 @@ socketio = SocketIO(app, cors_allowed_origins="*")
 load_dotenv(find_dotenv())
 embeddings = OpenAIEmbeddings()
 
+# A dictionary to store cached results per session
+cached_results = {}
+
 
 def create_db_from_video_url(video_url):
     loader = YoutubeLoader.from_youtube_url(video_url)
@@ -81,22 +84,6 @@ def get_response_from_query(
     return response, docs
 
 
-# A dictionary to store cached results per session
-cached_results = {}
-
-
-class MyCustomHandler(BaseCallbackHandler):
-    def on_llm_new_token(self, token: str, **kwargs) -> None:
-        # print(f"My custom handler, token: {token}")
-        emit("message_response", {"response": token})
-
-    def on_llm_end(self, response: LLMResult, **kwargs) -> None:
-        """Run when LLM ends running."""
-        print(f"Chat question end")
-        print(response)
-        emit("message_response", {"response": "END"})
-
-
 @socketio.on("send_message")
 def handle_send_message(data):
     session_id = request.sid
@@ -113,8 +100,20 @@ def handle_send_message(data):
         print("HIT FROM CACHE")
         db = cached_results[session_id]
 
-    stream_handler = MyCustomHandler()
+    stream_handler = SocketEmitterHandler()
     get_response_from_query(db, query, stream_handler=stream_handler)
+
+
+class SocketEmitterHandler(BaseCallbackHandler):
+    def on_llm_new_token(self, token: str, **kwargs) -> None:
+        # print(f"My custom handler, token: {token}")
+        emit("message_response", {"response": token})
+
+    def on_llm_end(self, response: LLMResult, **kwargs) -> None:
+        """Run when LLM ends running."""
+        print(f"Chat question end")
+        print(response)
+        emit("message_response", {"response": "END"})
 
 
 if __name__ == "__main__":
