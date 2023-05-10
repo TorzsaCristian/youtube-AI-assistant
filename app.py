@@ -5,9 +5,10 @@ from flask_cors import CORS
 from langchain.document_loaders import YoutubeLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.embeddings.openai import OpenAIEmbeddings
-from langchain.vectorstores import FAISS
+from langchain.vectorstores import FAISS, Chroma
 from langchain.chat_models import ChatOpenAI
-from langchain.chains import LLMChain
+from langchain.chains import LLMChain, ConversationChain
+from langchain.memory import ConversationBufferMemory
 from dotenv import find_dotenv, load_dotenv
 from langchain.prompts.chat import (
     ChatPromptTemplate,
@@ -29,11 +30,23 @@ embeddings = OpenAIEmbeddings()
 cached_results = {}
 
 
+class SocketEmitterHandler(BaseCallbackHandler):
+    def on_llm_new_token(self, token: str, **kwargs) -> None:
+        print(f"My custom handler, token: {token}")
+        emit("message_response", {"response": token})
+
+    def on_llm_end(self, response: LLMResult, **kwargs) -> None:
+        """Run when LLM ends running."""
+        print(f"Chat question end")
+        print(response)
+        emit("message_response", {"response": "END"})
+
+
 def create_db_from_video_url(video_url):
     loader = YoutubeLoader.from_youtube_url(video_url)
     transcript = loader.load()
 
-    text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=50)
+    text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=0)
     docs = text_splitter.split_documents(transcript)
 
     db = FAISS.from_documents(docs, embeddings)
@@ -57,11 +70,13 @@ def get_response_from_query(
     template = """
         You are a helpsul assistant that can answer question about youtube videos based in the video's transcript: {docs}
 
-        Only use factual information from the transcript to answer the question.
+        Only use factual information from the transcript to answer the question or, if no information is found, use your own context.
 
-        If you feel like you don't have enough information to answer, say "I don't know" and use your own knowledge to answer the question correctly and factual.
+        If you feel like you don't have enough information to answer, say "The transcript does not provide this, however, " and answer using your own context to answer the question correctly and factual.
 
         Your answers should be verbose and detailed and truthful.
+
+        Try not to talk about you.
     """
 
     system_message_prompt = SystemMessagePromptTemplate.from_template(template)
@@ -74,9 +89,12 @@ def get_response_from_query(
         [system_message_prompt, human_message_prompt]
     )
 
+    memory = ConversationBufferMemory(return_messages=True)
+
     chain = LLMChain(
         llm=chat,
         prompt=chat_prompt,
+        memory=memory
         # callbacks=[stream_handler],
     )
 
@@ -102,18 +120,6 @@ def handle_send_message(data):
 
     stream_handler = SocketEmitterHandler()
     get_response_from_query(db, query, stream_handler=stream_handler)
-
-
-class SocketEmitterHandler(BaseCallbackHandler):
-    def on_llm_new_token(self, token: str, **kwargs) -> None:
-        # print(f"My custom handler, token: {token}")
-        emit("message_response", {"response": token})
-
-    def on_llm_end(self, response: LLMResult, **kwargs) -> None:
-        """Run when LLM ends running."""
-        print(f"Chat question end")
-        print(response)
-        emit("message_response", {"response": "END"})
 
 
 if __name__ == "__main__":
